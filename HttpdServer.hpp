@@ -11,26 +11,26 @@ class HttpdServer{
 
 		void InitServer()
 		{	
-			listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+			listen_sock = socket(AF_INET, SOCK_STREAM, 0);		//创建套接字
 			if(listen_sock < 0) {
 				LOG(ERROR, "create socket error!");
 				exit(2);
 			}
 			
 			int opt_ = 1;
-			setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt_, sizeof(opt_));
+			setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt_, sizeof(opt_));		//
 
 			struct sockaddr_in local_;
 			local_.sin_family = AF_INET;
 			local_.sin_port = htons(port);
 			local_.sin_addr.s_addr = INADDR_ANY;
 
-			if(bind(listen_sock, (struct sockaddr*)&local_, sizeof(local_)) < 0) {
+			if(bind(listen_sock, (struct sockaddr*)&local_, sizeof(local_)) < 0) {		//绑定套接字
 				LOG(ERROR, "bind socket error!");
 				exit(3);
 			}
 
-			if(listen(listen_sock, 5) < 0) {
+			if(listen(listen_sock, 5) < 0) {		//监听套接字
 				LOG(ERROR, "listen socket error!");
 				exit(4);
 			}
@@ -45,13 +45,13 @@ class HttpdServer{
 			for(;;) {
 				struct sockaddr_in peer_;
 				socklen_t len = sizeof(peer_);
-				int sock_ = accept(listen_sock, (struct sockaddr*)&peer_, &len);
+				int sock_ = accept(listen_sock, (struct sockaddr*)&peer_, &len);		//接收
 				if(sock_ < 0) {
 					LOG(WARNING, "accept error!");
 					continue;
 				}
 				LOG(INFO, "Get New Client, Create Thread Handler Rquest...");
-				pthread_t tid_;
+				pthread_t tid_;						//创建线程
 				int *sockp_ = new int;
 				*sockp_ = sock_;
 				pthread_create(&tid_, NULL, Entry::HandlerRequest, (void*)sockp_);

@@ -1,6 +1,6 @@
 #include "HttpdServer.hpp"
 
-static void *usage(std::string proc_)
+static void *Usage(std::string proc_)
 {
 	std::cout << "Usage " << proc_ << " port" << std::endl;
 }
@@ -8,13 +8,13 @@ static void *usage(std::string proc_)
 int main(int argc, char *argv[])
 {
 	if(argc != 2) {
-		Usage(argv[0]);
+		Usage(argv[0]);			//打印输入格式
 		exit(1);
 	}	
 
-	HttpdServer *serp = new HttpdServer(atoi(argv[1]));
-	serp->InitServer();
-	serp->Start();
+	HttpdServer *serp = new HttpdServer(atoi(argv[1]));		
+	serp->InitServer();				//初始化服务器
+	serp->Start();					//启动服务器
 
 	delete serp;
 
