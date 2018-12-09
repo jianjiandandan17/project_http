@@ -19,12 +19,15 @@
 #include <unordered_map>
 #include "Log.hpp"
 
-#define NOT_FOUND 404
 #define OK 200
+#define BAD_REQUEST 400
+#define NOT_FOUND 404
+#define SERVER_ERROR 500
 
 #define WEB_ROOT "wwwroot"
 #define HOME_PAGE "index.html"
 #define HTTP_VERSION "HTTP/1.0" 
+#define PAGE_404 "404.html"
 
 std::unordered_map<std::string, std::string> stuffix_map{
 	{".html", "text/html"},
@@ -57,8 +60,12 @@ class ProtocolUtil{
 				switch(code) {
 					case 200:
 						return "OK";
+					case 400:
+						return "Bad Request";
 					case 404:
 						return "NOT FOUND";
+					case 500:
+						return "Internal Server Error";
 					default:
 						return "UNKNOW";
 				}
@@ -190,7 +197,7 @@ class Request{
 
 		bool IsNeedRecvText()		//判断是否是POST方法
 		{
-			if(strcasecmp(method.c_str(), "POST")){
+			if(strcasecmp(method.c_str(), "POST") == 0){
 				return true;
 			}
 			return false;
@@ -206,9 +213,19 @@ class Request{
 			return resource_size;
 		}
 
+		void SetResourceSize(int rs_)
+		{
+			resource_size = rs_;
+		}
+
 		std::string &GetSuffix()
 		{
 			return resource_suffix;
+		}
+
+		void SetSuffix(std::string suffix_)
+		{
+			resource_suffix = suffix_;
 		}
 
 		std::string &GetPath()
@@ -216,9 +233,9 @@ class Request{
 			return path;
 		}
 
-		void SetResourceSize(int rs_)
+		void SetPath(std::string &path_)
 		{
-			resource_size = rs_;
+			path = path_;
 		}
 
 		bool IsCgi()
@@ -266,8 +283,8 @@ class Response{
 
 		void OpenResource(Request *&rq_) 		//以只读方式打开文件
 		{
-			std::string path = rq_->GetPath();	//获取文件路径
-			fd = open(path.c_str(), O_RDONLY);	//以只读方式打开文件
+			std::string path_ = rq_->GetPath();	//获取文件路径
+			fd = open(path_.c_str(), O_RDONLY);	//以只读方式打开文件
 		}
 
 		~Response()
@@ -290,7 +307,7 @@ class Connect{
 		{
 			char c = 'X';								//初始化字符c
 			while(c != '\n') {
-				size_t s = recv(sock, &c, 1, 0);		//每次接收一个字符
+				ssize_t s = recv(sock, &c, 1, 0);		//每次接收一个字符
 				if(s > 0) {								
 					if(c == '\r') {						//处理\r情况
 						recv(sock, &c, 1, MSG_PEEK);	//利用recv窥探技术看下一个字符是否是\n
@@ -328,6 +345,7 @@ class Connect{
 			while(i_ < len_) {
 					recv(sock, &c_, 1, 0);
 					text_.push_back(c_);
+					i_++;
 			}
 			param_ = text_;
 		}
@@ -385,7 +403,7 @@ class Entry{
 
 			pid_t id = fork();
 			if(id < 0) {
-				code_ = NOT_FOUND;
+				code_ = SERVER_ERROR;
 				return;
 			}
 			else if(id == 0) {
@@ -441,10 +459,39 @@ class Entry{
 			}
 		}
 
-		static void *HandlerRequest(void *arg_)
+		static void HandlerError(Connect *&conn_, Request *&rq_, Response *&rsp_)
 		{
-			int sock_ = *(int*)arg_;
-			delete (int*)arg_;
+			int &code_ = rsp_->code;
+			switch(code_) {
+				case 400:
+					break;
+				case 404:
+					Process404(conn_, rq_, rsp_);
+					break;
+				case 500:
+					break;
+				case 503:
+					break;
+			}
+		}
+
+		static void Process404(Connect *&conn_, Request *&rq_, Response *&rsp_)
+		{
+			std::string path_ = WEB_ROOT;
+			path_ += "/";
+			path_ += PAGE_404;
+			struct stat st;
+			stat(path_.c_str(), &st);
+
+			rq_->SetResourceSize(st.st_size);
+			rq_->SetSuffix(".html");
+			rq_->SetPath(path_);
+
+			ProcessNonCgi(conn_, rq_, rsp_);
+		}	
+
+		static int HandlerRequest(int sock_)
+		{
 			Connect *conn_ = new Connect(sock_);
 			Request *rq_ = new Request();
 			Response *rsp_ = new Response();
@@ -454,11 +501,13 @@ class Entry{
 			conn_->RecvOneLine(rq_->rq_line);		//接收第一行
 			rq_->RequestLineParse();				//处理请求行，将第一行拆分成方法 URI 版本
 			if(!rq_->IsMethodLegal() ) {			//判断方法是否合法(是否是GET/POST方法)
-				code_ = NOT_FOUND;					//不合法，将code置为NOT_FOUND
+				conn_->RecvRequestHead(rq_->rq_head);
+				code_ = BAD_REQUEST;					//不合法，将code置为NOT_FOUND
 				goto end;
 			}
 			rq_->UriParse();						//处理路径
 			if(!rq_->IsPathLegal()) {				//判断路径是否合法
+				conn_->RecvRequestHead(rq_->rq_head);
 				code_ = NOT_FOUND;					//不合法，将code置为NOT_FOUND
 				goto end;
 			}
@@ -470,7 +519,7 @@ class Entry{
 				LOG(INFO, "parse head done");
 			}
 			else {
-				code_ = NOT_FOUND;
+				code_ = BAD_REQUEST;
 				goto end;
 			}
 
@@ -479,13 +528,15 @@ class Entry{
 			}
 
 			PorcessResponse(conn_, rq_, rsp_);
+
 end:
 			if(code_ != OK) {
-				//Handler
+				HandlerError(conn_, rq_, rsp_);
 			}
 			delete conn_;
 			delete rq_;
 			delete rsp_;
+			return code_;
 		}
 	private:
 
